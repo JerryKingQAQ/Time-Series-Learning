@@ -12,7 +12,7 @@ from utils import add_features, average_predictions, create_time_dataset
 from sklearn.preprocessing import MinMaxScaler, RobustScaler
 from torch.utils.data import DataLoader
 from torch.utils.data import TensorDataset
-from model import BiLSTM
+from model import BiLSTM, LinearModel
 from train import train
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -69,13 +69,15 @@ if __name__ == "__main__":
 
     # 选择特征列
     feature_index = 0  # 选取meantemp作为单变量时间序列
-    train_feature = train_variables[:, 0].reshape(-1, 1)
-    test_feature = test_variables[:, 0].reshape(-1, 1)
+    train_feature = train_variables[:, feature_index].reshape(-1, 1)
+    test_feature = test_variables[:, feature_index].reshape(-1, 1)
     concat_feature = np.concatenate((train_feature, test_feature), axis=0)
-    print("Feature Shape: ", train_feature.shape, test_feature.shape, concat_feature.shape)
+    print(
+        "Feature Shape: ", train_feature.shape, test_feature.shape, concat_feature.shape
+    )
 
     # 归一化
-    scaler = MinMaxScaler()
+    scaler = MinMaxScaler(feature_range=(-1, 1))
     # scaler = RobustScaler()
     # scaler = StandardScaler()
     train_feature = scaler.fit_transform(train_feature)
@@ -85,11 +87,12 @@ if __name__ == "__main__":
     # 构建数据集
     lookback = 7  # 回溯时间步
     forecast_lengths = 2  # 预测长度
+    step = 1 # 步长
     train_data, train_target = create_time_dataset(
-        train_feature, lookback, forecast_lengths, device
+        train_feature, lookback, forecast_lengths, device, step
     )
     test_data, test_target = create_time_dataset(
-        test_feature, lookback, forecast_lengths, device
+        test_feature, lookback, forecast_lengths, device, step
     )
 
     print("Train Dataset shape: ", train_data.shape, train_target.shape)
@@ -106,13 +109,20 @@ if __name__ == "__main__":
     model = BiLSTM(
         input_size=lookback, hidden_size=256, num_layers=2, output_size=forecast_lengths
     ).to(device)
+    # model = LSTM(
+    #     input_size=lookback, hidden_size=256, num_layers=2, output_size=forecast_lengths
+    # ).to(device)
+    # model = LinearModel(
+    #     input_size=lookback, hidden_size=256, output_size=forecast_lengths
+    # ).to(device)
     optimizer = optim.Adam(model.parameters(), lr=1e-3, weight_decay=1e-5)
+    # optimizer = optim.SGD(model.parameters(), lr=1e-2, weight_decay=1e-5)
     scheduler = ReduceLROnPlateau(optimizer, "min", patience=10)
     loss = nn.MSELoss()
 
     # 训练模型
     best_train_preds, best_test_preds = train(
-        model, train_loader, test_loader, loss, optimizer, scheduler, n_epochs=200
+        model, train_loader, test_loader, loss, optimizer, scheduler, n_epochs=100
     )
 
     # print("Best Test Preds: ", best_test_preds)
